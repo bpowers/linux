@@ -1833,7 +1833,7 @@ static int userfaultfd_writeprotect(struct userfaultfd_ctx *ctx,
 			   sizeof(struct uffdio_writeprotect)))
 		return -EFAULT;
 
-	ret = validate_range(ctx->mm, uffdio_wp.range.start,
+	ret = validate_range(ctx->mm, &uffdio_wp.range.start,
 			     uffdio_wp.range.len);
 	if (ret)
 		return ret;
