@@ -35,6 +35,7 @@
 #include <linux/dmi.h>
 #include <linux/smp.h>
 #include <linux/mm.h>
+#include <linux/kutrace.h>
 
 #include <asm/trace/irq_vectors.h>
 #include <asm/irq_remapping.h>
@@ -1140,9 +1141,13 @@ __visible void __irq_entry smp_apic_timer_interrupt(struct pt_regs *regs)
 	 * interrupt lock, which is the WrongThing (tm) to do.
 	 */
 	entering_ack_irq();
+	kutrace1(KUTRACE_IRQ + LOCAL_TIMER_VECTOR, 0);
+
 	trace_local_timer_entry(LOCAL_TIMER_VECTOR);
 	local_apic_timer_interrupt();
 	trace_local_timer_exit(LOCAL_TIMER_VECTOR);
+
+	kutrace1(KUTRACE_IRQRET + LOCAL_TIMER_VECTOR, 0);
 	exiting_irq();
 
 	set_irq_regs(old_regs);

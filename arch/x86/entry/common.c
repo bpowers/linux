@@ -26,6 +26,7 @@
 #include <linux/livepatch.h>
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
+#include <linux/kutrace.h>
 
 #include <asm/desc.h>
 #include <asm/traps.h>
@@ -291,13 +292,28 @@ __visible void do_syscall_64(unsigned long nr, struct pt_regs *regs)
 
 	if (likely(nr < NR_syscalls)) {
 		nr = array_index_nospec(nr, NR_syscalls);
+		/* Pass in low 16 bits of call arg0 and return value */
+		kutrace1(KUTRACE_SYSCALL64 | kutrace_map_nr(nr), regs->di & 0xFFFFul);
 		regs->ax = sys_call_table[nr](regs);
+		/* Pass in low 16 bits of return value */
+		kutrace1(KUTRACE_SYSRET64 | kutrace_map_nr(nr), regs->ax & 0xFFFFul);
 #ifdef CONFIG_X86_X32_ABI
 	} else if (likely((nr & __X32_SYSCALL_BIT) &&
 			  (nr & ~__X32_SYSCALL_BIT) < X32_NR_syscalls)) {
 		nr = array_index_nospec(nr & ~__X32_SYSCALL_BIT,
 					X32_NR_syscalls);
 		regs->ax = x32_sys_call_table[nr](regs);
+#endif
+#ifdef CONFIG_KUTRACE
+       /* dsites 2019.03.03 hook for controlling kutrace */
+       } else if ((nr == __NR_kutrace_control) && (kutrace_global_ops.kutrace_trace_control != NULL)) {
+		BUILD_BUG_ON_MSG(NR_syscalls > __NR_kutrace_control, "__NR_kutrace_control is too small");
+		BUILD_BUG_ON_MSG(16 > TASK_COMM_LEN, "TASK_COMM_LEN is less than 16");
+
+		/* Calling kutrace_control(u64 command, u64 arg) */
+		/* see arch/x86/calling.h: */
+		/*  syscall arg0 in rdi (command), arg1 in rsi (arg) */
+		regs->ax = (*kutrace_global_ops.kutrace_trace_control)(regs->di, regs->si);
 #endif
 	}
 

@@ -20,6 +20,7 @@
 #include <linux/cpuidle.h>
 #include <linux/cpu.h>
 #include <acpi/processor.h>
+#include <linux/kutrace.h>
 
 /*
  * Include the apic definitions for x86 to have the APIC timer related defines
@@ -670,6 +671,7 @@ static void __cpuidle acpi_idle_do_entry(struct acpi_processor_cx *cx)
 		acpi_safe_halt();
 	} else {
 		/* IO port based C-state */
+		kutrace1(KUTRACE_MWAIT, 255);   /* Flag to make this patch distinctive */
 		inb(cx->address);
 		wait_for_freeze();
 	}
@@ -691,6 +693,7 @@ static int acpi_idle_play_dead(struct cpuidle_device *dev, int index)
 		if (cx->entry_method == ACPI_CSTATE_HALT)
 			safe_halt();
 		else if (cx->entry_method == ACPI_CSTATE_SYSTEMIO) {
+			kutrace1(KUTRACE_MWAIT, 255);   /* Flag to make this patch distinctive */
 			inb(cx->address);
 			wait_for_freeze();
 		} else

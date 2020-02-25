@@ -8,6 +8,7 @@
 #include <linux/export.h>
 #include <linux/cpu.h>
 #include <linux/debugfs.h>
+#include <linux/kutrace.h>
 
 #include <asm/tlbflush.h>
 #include <asm/mmu_context.h>

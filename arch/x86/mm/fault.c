@@ -18,6 +18,7 @@
 #include <linux/uaccess.h>		/* faulthandler_disabled()	*/
 #include <linux/efi.h>			/* efi_recover_from_page_fault()*/
 #include <linux/mm_types.h>
+#include <linux/kutrace.h>
 
 #include <asm/cpufeature.h>		/* boot_cpu_has, ...		*/
 #include <asm/traps.h>			/* dotraplinkage, ...		*/
@@ -1527,7 +1528,9 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code, unsigned long addr
 
 	prev_state = exception_enter();
 	trace_page_fault_entries(regs, error_code, address);
+	kutrace1(KUTRACE_TRAP + KUTRACE_PAGEFAULT, 0);
 	__do_page_fault(regs, error_code, address);
+	kutrace1(KUTRACE_TRAPRET + KUTRACE_PAGEFAULT, 0);
 	exception_exit(prev_state);
 }
 NOKPROBE_SYMBOL(do_page_fault);

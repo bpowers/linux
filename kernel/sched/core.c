@@ -9,8 +9,8 @@
 #include "sched.h"
 
 #include <linux/nospec.h>
-
 #include <linux/kcov.h>
+#include <linux/kutrace.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
@@ -2346,6 +2346,7 @@ void scheduler_ipi(void)
 		this_rq()->idle_balance = 1;
 		raise_softirq_irqoff(SCHED_SOFTIRQ);
 	}
+	kutrace1(KUTRACE_IRQRET + RESCHEDULE_VECTOR, 0);
 	irq_exit();
 }
 
@@ -2539,6 +2540,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		success = 1;
 		cpu = task_cpu(p);
 		trace_sched_waking(p);
+		kutrace1(KUTRACE_RUNNABLE, p->pid);
 		p->state = TASK_RUNNING;
 		trace_sched_wakeup(p);
 		goto out;
@@ -2556,6 +2558,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		goto unlock;
 
 	trace_sched_waking(p);
+	kutrace1(KUTRACE_RUNNABLE, p->pid);
 
 	/* We're going to change ->state: */
 	success = 1;
@@ -4007,6 +4010,8 @@ static void __sched notrace __schedule(bool preempt)
 	struct rq *rq;
 	int cpu;
 
+	kutrace1(KUTRACE_SYSCALL64 + KUTRACE_SCHEDSYSCALL, 0);
+
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
 	prev = rq->curr;
@@ -4077,6 +4082,9 @@ static void __sched notrace __schedule(bool preempt)
 		++*switch_count;
 
 		trace_sched_switch(preempt, prev, next);
+		/* Put pid name into trace first time */
+		kutrace_pidname(next);
+		kutrace1(KUTRACE_USERPID, next->pid);
 
 		/* Also unlocks the rq: */
 		rq = context_switch(rq, prev, next, &rf);
@@ -4086,6 +4094,7 @@ static void __sched notrace __schedule(bool preempt)
 	}
 
 	balance_callback(rq);
+	kutrace1(KUTRACE_SYSRET64 + KUTRACE_SCHEDSYSCALL, 0);
 }
 
 void __noreturn do_task_dead(void)

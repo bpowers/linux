@@ -21,6 +21,7 @@
 #include <linux/interrupt.h>
 #include <linux/cpu.h>
 #include <linux/gfp.h>
+#include <linux/kutrace.h>
 
 #include <asm/mtrr.h>
 #include <asm/tlbflush.h>
@@ -226,6 +227,7 @@ static void native_stop_other_cpus(int wait)
 __visible void __irq_entry smp_reschedule_interrupt(struct pt_regs *regs)
 {
 	ack_APIC_irq();
+	kutrace1(KUTRACE_IRQ + RESCHEDULE_VECTOR, 0);
 	inc_irq_stat(irq_resched_count);
 	kvm_set_cpu_l1tf_flush_l1d();
 
@@ -247,20 +249,28 @@ __visible void __irq_entry smp_reschedule_interrupt(struct pt_regs *regs)
 __visible void __irq_entry smp_call_function_interrupt(struct pt_regs *regs)
 {
 	ipi_entering_ack_irq();
+	kutrace1(KUTRACE_IRQ + CALL_FUNCTION_VECTOR, 0);
+
 	trace_call_function_entry(CALL_FUNCTION_VECTOR);
 	inc_irq_stat(irq_call_count);
 	generic_smp_call_function_interrupt();
 	trace_call_function_exit(CALL_FUNCTION_VECTOR);
+
+	kutrace1(KUTRACE_IRQRET + CALL_FUNCTION_VECTOR, 0);
 	exiting_irq();
 }
 
 __visible void __irq_entry smp_call_function_single_interrupt(struct pt_regs *r)
 {
 	ipi_entering_ack_irq();
+	kutrace1(KUTRACE_IRQ + CALL_FUNCTION_SINGLE_VECTOR, 0);
+
 	trace_call_function_single_entry(CALL_FUNCTION_SINGLE_VECTOR);
 	inc_irq_stat(irq_call_count);
 	generic_smp_call_function_single_interrupt();
 	trace_call_function_single_exit(CALL_FUNCTION_SINGLE_VECTOR);
+
+	kutrace1(KUTRACE_IRQRET + CALL_FUNCTION_SINGLE_VECTOR, 0);
 	exiting_irq();
 }
 
