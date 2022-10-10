@@ -500,7 +500,7 @@ static struct sk_msg *alloc_sk_msg(void)
 {
 	struct sk_msg *msg;
 
-	msg = kzalloc(sizeof(*msg), __GFP_NOWARN | GFP_KERNEL);
+	msg = kzalloc(sizeof(*msg), __GFP_NOWARN | GFP_ATOMIC);
 	if (unlikely(!msg))
 		return NULL;
 	sg_init_marker(msg->sg.data, NR_MSG_FRAG_IDS);
@@ -904,6 +904,10 @@ static int sk_psock_skb_redirect(struct sk_psock *from, struct sk_buff *skb)
 {
 	struct sk_psock *psock_other;
 	struct sock *sk_other;
+	int err = -EIO;
+	int ret = 0;
+	u32 len, off;
+	bool ingress;
 
 	sk_other = skb_bpf_redirect_fetch(skb);
 	/* This error is a buggy BPF program, it returned a redirect
@@ -932,10 +936,67 @@ static int sk_psock_skb_redirect(struct sk_psock *from, struct sk_buff *skb)
 		return -EIO;
 	}
 
-	skb_queue_tail(&psock_other->ingress_skb, skb);
-	schedule_work(&psock_other->work);
 	spin_unlock_bh(&psock_other->ingress_lock);
-	return 0;
+
+	/* If the queue is empty then we can submit directly
+	 * into the msg queue. If its not empty we have to
+	 * queue work otherwise we may get OOO data. Otherwise,
+	 * if sk_psock_skb_ingress errors will be handled by
+	 * retrying later from workqueue.
+	 */
+	if (skb_queue_empty(&psock_other->ingress_skb)) {
+		len = skb->len;
+		off = 0;
+		if (skb_bpf_strparser(skb)) {
+			struct strp_msg *stm = strp_msg(skb);
+
+			off = stm->offset;
+			len = stm->full_len;
+		}
+
+		ingress = skb_bpf_ingress(skb);
+		skb_bpf_redirect_clear(skb);
+		do {
+			ret = -EIO;
+			if (!sock_flag(psock_other->sk, SOCK_DEAD))
+				ret = sk_psock_handle_skb(psock_other, skb, off,
+							  len, ingress);
+			if (ret <= 0) {
+				WARN_ONCE(ret == -EAGAIN, "need to handle -EAGAIN");
+				if (ret == -EAGAIN) {
+					/* if -EAGAIN, shove it on the queue and hit
+					 * the slow path. */
+					spin_lock_bh(&psock_other->ingress_lock);
+					skb_queue_tail(&psock_other->ingress_skb, skb);
+					schedule_work(&psock_other->work);
+					spin_unlock_bh(&psock_other->ingress_lock);
+					goto end;
+				}
+				/* Hard errors break pipe and stop xmit. */
+				sk_psock_report_error(psock_other, ret ? -ret : EPIPE);
+				sk_psock_clear_state(psock_other, SK_PSOCK_TX_ENABLED);
+				sock_drop(psock_other->sk, skb);
+				goto end;
+			}
+			off += ret;
+			len -= ret;
+		} while (len);
+
+		if (!ingress)
+			kfree_skb(skb);
+
+		err = 0;
+	}
+
+	if (err < 0) {
+		spin_lock_bh(&psock_other->ingress_lock);
+		skb_queue_tail(&psock_other->ingress_skb, skb);
+		schedule_work(&psock_other->work);
+		spin_unlock_bh(&psock_other->ingress_lock);
+	}
+
+end:
+	return ret;
 }
 
 static void sk_psock_tls_verdict_apply(struct sk_buff *skb,
